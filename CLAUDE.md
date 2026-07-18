@@ -7,8 +7,8 @@ Guidance for working in this repository.
 Observationally-derived **Green's functions (GFs)** for net radiative feedback.
 GFs are trained on **amip-piForcing** simulations (constant pre-industrial forcing,
 so net TOA = radiative response only) and used to reconstruct feedback λ from SST
-patterns. See `PLAN.md` for the full design and `obsGF_design-doc.md` for the
-original goal.
+patterns. (The original design/goal notes are not in the repo — they live in the
+early git history and locally.)
 
 **Core idea / why it works:** in historical runs, net TOA is N′ = F′ + λ·T′ with the
 forcing F′ unknown, so λ can't be regressed directly. In amip-piForcing F′ = 0, so
@@ -86,7 +86,8 @@ Knobs live in visible cells at the top of each notebook (`FORCE`, `ONLY_MODELS`,
 `WINDOW_LENGTH`, `RATIO_*`, `WALKTHROUGH_MODEL`) — no CLI.
 
 **`obsgf/` is now helper modules only** (imported by the notebooks), per the
-`earth-science-code-guidelines.md` split — boring, trusted machinery, not the science:
+exploratory-science split (extract only boring machinery; keep the science in cells) —
+trusted machinery, not the science:
 - `config.py` — paths, roster, file-finders, shared constants (`ANALYSIS_YEARS`, `BASELINE_YEARS`, `OCEAN_SFTLF_MAX`)
 - `catalog.py` — all intake-esm / xmip catalog plumbing (imported only by 01)
 - `masks.py` — ocean masks + area-weighted global means
@@ -126,7 +127,7 @@ smoothed T′ ≤ 0.2 K so the denominator stays a robust positive warming signa
 
 ## Conventions
 
-- **Exploratory science, readability first** (see `earth-science-code-guidelines.md`):
+- **Exploratory science, readability first**:
   audience is a first-year atmospheric-sciences grad student. Keep the science at
   notebook-cell level with intermediates visible to plot/inspect; extract only boring,
   trusted machinery (I/O, catalog, regridding, plotting) into `obsgf/`. Don't collapse an
