@@ -11,23 +11,27 @@ PREPROCESSED_DIR = PROJECT_ROOT / "pre-processed_data"
 DERIVED_DIR = PROJECT_ROOT / "derived"
 FIGURES_DIR = PROJECT_ROOT / "figures"
 
-# --- candidate models to preprocess ----------------------------------------
-# These are *attempted* during preprocessing. The analysis roster is NOT this list
-# — it is derived from what preprocessing actually produced (see analysis_models()),
-# so any model missing a required variable is dropped automatically.
-CANDIDATE_AMIP_MODELS = [
+# --- model roster ----------------------------------------------------------
+# The models analyzed everywhere. Each one has a full amip-piForcing predictor/target
+# set (tas, toa, ts) so a per-model GF can be built, AND a historical tos so that GF can
+# be applied — the two requirements to go through the whole pipeline. Preprocessing (01),
+# GF fitting (02), and the historical analysis (03) all iterate this one list.
+#
+# To add a model: download its amip-piForcing (tas/toa/ts) and historical tos into the
+# pool, add its name here, and rerun 01 -> 02 -> 03. (GISS-E2-1-G is deliberately absent:
+# its local amip-piForcing covers only 1950-1970, too short to build a GF.)
+#
+# Kept in sorted() order so the model dimension of the outputs is deterministic.
+MODELS = [
     "CESM2",
-    "CanESM5",
     "CNRM-CM6-1",
+    "CanESM5",
     "HadGEM3-GC31-LL",
     "IPSL-CM6A-LR",
     "MIROC6",
     "MRI-ESM2-0",
     "TaiESM1",
 ]
-# GISS-E2-1-G has local amip-piForcing for 1950-1970 only, so it can't build a GF; it can
-# still supply historical tos, so we preprocess it, but it won't enter the analysis.
-CANDIDATE_HIST_MODELS = CANDIDATE_AMIP_MODELS + ["GISS-E2-1-G"]
 
 
 # --- shared analysis constants ---------------------------------------------
@@ -43,13 +47,13 @@ OCEAN_SFTLF_MAX = 50.0         # cell is "ocean" if land fraction < this (%); us
 
 
 # --- what to preprocess ----------------------------------------------------
-# experiment -> (variables, candidate models). "toa" is derived from rsdt-rsut-rlut.
-# "ts" (surface temperature) over open ocean IS the prescribed SST — a cleaner GF
-# predictor than tas (2-m air temp). Historical runs only feed the GF reconstruction,
-# so only tos is needed from them.
+# experiment -> variables to pull from the catalog (all over MODELS). "toa" is derived
+# from rsdt-rsut-rlut. "ts" (surface temperature) over open ocean IS the prescribed SST
+# — a cleaner GF predictor than tas (2-m air temp). Historical runs only feed the GF
+# reconstruction, so only tos is needed from them.
 PREPROCESS_SPEC = {
-    "amip-piForcing": (["tas", "toa", "ts"], CANDIDATE_AMIP_MODELS),
-    "historical": (["tos"], CANDIDATE_HIST_MODELS),
+    "amip-piForcing": ["tas", "toa", "ts"],
+    "historical": ["tos"],
 }
 
 TOA_INPUTS = ["rsdt", "rsut", "rlut"]  # toa = rsdt - rsut - rlut (net downward)
@@ -59,42 +63,8 @@ TOA_INPUTS = ["rsdt", "rsut", "rlut"]  # toa = rsdt - rsut - rlut (net downward)
 # never needs the catalog. Written as pre-processed_data/sftlf_<model>.nc.
 SFTLF_SOURCE = "piControl"
 
-# --- analysis roster (derived from preprocessing output) -------------------
-# A model is a per-model GF requires every amip-piForcing predictor/target variable;
-# applying that GF to the model's own historical run requires historical tos. So the
-# analysis roster is the set of models that have BOTH. Because GFs are per-model, the
-# historical analysis uses this same roster — not the broader set of models that merely
-# happen to report historical tos.
-REQUIRED_AMIP_VARS = ["tas", "toa", "ts"]   # ts = SST predictor; tas/toa = global targets
 
-
-def _preprocessed_models(experiment, variables):
-    """Models in pre-processed_data/ that have every one of `variables` for `experiment`.
-
-    Filenames are `{var}_{table}_{model}_{experiment}_{member}_{grid}_{years}.nc`;
-    no field except the model name contains a hyphen and none contains an underscore,
-    so positional split is safe.
-    """
-    have = {}
-    for f in PREPROCESSED_DIR.glob("*.nc"):
-        parts = f.stem.split("_")
-        if len(parts) < 4:
-            continue
-        var, model, exp = parts[0], parts[2], parts[3]
-        if exp == experiment:
-            have.setdefault(model, set()).add(var)
-    return {m for m, vs in have.items() if set(variables) <= vs}
-
-
-def analysis_models():
-    """The analysis roster: models with a full amip-piForcing predictor set AND
-    historical tos, so a per-model GF can be both built and applied. Computed from
-    what preprocessing produced, so it shrinks/grows with the data on disk."""
-    amip = _preprocessed_models("amip-piForcing", REQUIRED_AMIP_VARS)
-    hist = _preprocessed_models("historical", ["tos"])
-    return sorted(amip & hist)
-
-
+# --- file finders (locate stage-1 outputs; no catalog) ---------------------
 def find_preprocessed(var, experiment, model, member=None):
     """The pre-processed file for (var, experiment, model[, member]); error if not unique.
 

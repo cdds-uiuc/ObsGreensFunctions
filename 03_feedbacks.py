@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from collections import namedtuple
 
 from obsgf import config
-from obsgf.config import ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR, FIGURES_DIR, analysis_models, representative_member
+from obsgf.config import ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR, FIGURES_DIR, MODELS, representative_member
 from obsgf.regrid import regrid_model
 
 # --- knobs for this notebook (edit freely) ---
@@ -182,7 +182,7 @@ def feedback_of(years, T, N):
     return Feedback(window_slopes(T, N, years), cumulative_ratio(T, N, years))
 
 
-models = analysis_models()
+models = MODELS
 shared_years = amip_series(models[0])["amip_true"][0]
 center_year = window_centres(shared_years)
 ratio_year = shared_years[shared_years >= RATIO_START_YEAR]

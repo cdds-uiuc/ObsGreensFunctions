@@ -16,7 +16,7 @@ import argparse
 import xarray as xr
 import xesmf as xe
 
-from .config import DERIVED_DIR, analysis_models, find_preprocessed, historical_members
+from .config import DERIVED_DIR, MODELS, find_preprocessed, historical_members
 from .masks import ocean_mask
 
 
@@ -66,7 +66,7 @@ def main(argv=None):
     p.add_argument("--force", action="store_true")
     args = p.parse_args(argv)
 
-    models = [args.model] if args.model else analysis_models()
+    models = [args.model] if args.model else MODELS
     for m in models:
         res = regrid_model(m, rebuild=args.force)
         one = next(iter(res.values()))

@@ -24,7 +24,7 @@ import cartopy.crs as ccrs
 
 from obsgf import config
 from obsgf.config import (ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR,
-                          analysis_models, find_preprocessed)
+                          MODELS, find_preprocessed)
 from obsgf.masks import ocean_mask, global_mean
 
 # --- knobs for this notebook (edit freely) ---
@@ -273,7 +273,7 @@ def fit_gf(model):
 
 
 all_skill = []
-for model in analysis_models():
+for model in MODELS:
     all_skill += fit_gf(model)
     print(f"fit {model}")
 
@@ -289,7 +289,7 @@ print(skill_table.groupby(["target", "segment"]).r2.mean().round(2).to_string())
 # reconstructed well from the SST pattern; N (noisier, cloud-dominated) is harder.
 
 # %%
-models = analysis_models()
+models = MODELS
 ncols = 4
 nrows = int(np.ceil(len(models) / ncols))          # grid sized to the model count
 fig = plt.figure(figsize=(4 * ncols, 3 * nrows))

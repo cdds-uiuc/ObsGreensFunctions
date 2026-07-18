@@ -56,9 +56,9 @@ def global_mean(da):
 
 
 if __name__ == "__main__":
-    from .config import analysis_models
+    from .config import MODELS
 
-    for m in analysis_models():
+    for m in MODELS:
         mask = ocean_mask(m, rebuild=True)
         frac = float(mask.mean())
         print(f"{m}: ocean fraction {frac:.2f}  grid {mask.sizes['lat']}x{mask.sizes['lon']}")

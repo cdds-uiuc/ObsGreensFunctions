@@ -192,8 +192,8 @@ config.PREPROCESSED_DIR.mkdir(exist_ok=True)
 outcomes = Counter()
 
 # annual-mean fields (tas, toa, tos): one file per experiment / model / member
-for experiment, (variables, models) in config.PREPROCESS_SPEC.items():
-    for model in models:
+for experiment, variables in config.PREPROCESS_SPEC.items():
+    for model in config.MODELS:
         if ONLY_MODELS and model not in ONLY_MODELS:
             continue
         for var in variables:
@@ -204,7 +204,7 @@ for experiment, (variables, models) in config.PREPROCESS_SPEC.items():
                 outcomes[build_annual_member(var, experiment, model, mem, grid, FORCE)] += 1
 
 # static land fraction (sftlf): one file per model
-for model in config.CANDIDATE_HIST_MODELS:
+for model in config.MODELS:
     if ONLY_MODELS and model not in ONLY_MODELS:
         continue
     outcomes[build_sftlf(model, FORCE)] += 1
