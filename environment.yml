@@ -1,0 +1,30 @@
+name: obs-gf
+channels:
+  - conda-forge
+dependencies:
+  # core pangeo / scientific stack
+  - python=3.12
+  - numpy
+  - scipy
+  - pandas
+  - xarray
+  - dask
+  - netcdf4
+  - cftime
+  - bottleneck        # fast reductions for xarray
+  # CMIP6 catalog access + harmonization (pool's preprocess hook)
+  - intake-esm
+  - xmip
+  # regridding: per-model tos (ocean grid) -> atmosphere grid
+  # xesmf >=0.8 needed: older releases `import ESMF`, but esmpy >=8.4 renamed it to `esmpy`
+  - xesmf>=0.8.2
+  - esmpy>=8.4
+  # regression
+  - scikit-learn
+  # plotting / maps
+  - matplotlib
+  - cartopy
+  # notebooks
+  - jupyterlab
+  - jupytext
+  - ipykernel

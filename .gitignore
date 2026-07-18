@@ -1,0 +1,16 @@
+# --- OS / editor / Python junk ---
+.DS_Store
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Jupytext pairs: the .py notebooks are the source of truth; .ipynb are regenerable
+*.ipynb
+
+# --- large, regenerable data (NOT in git) ---
+# stage-1 outputs and all derived products; rebuild by running the notebooks
+pre-processed_data/
+derived/
+
+# --- deprecated: tabled/scratch work, kept locally but out of git entirely ---
+deprecated/
