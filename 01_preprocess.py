@@ -9,7 +9,9 @@
 # 3. take a **month-length-weighted annual mean**,
 # 4. save one file per member to `pre-processed_data/`.
 #
-# We also extract each model's static land-fraction field `sftlf` (for ocean masks later).
+# Variables: `tas` (2-m air temp), `toa`, `ts` (surface temp — over open ocean this *is*
+# the prescribed SST, our Green's-function predictor), and historical `tos`. We also
+# extract each model's static land-fraction field `sftlf` (for ocean masks later).
 #
 # **Why this is its own stage:** it is the *only* place that opens the CMIP6 catalog.
 # Everything downstream (masks, Green's functions, feedbacks) reads `pre-processed_data/`
@@ -30,7 +32,7 @@ from obsgf.catalog import (open_catalog, list_members, load_member, raw_vars_for
 
 # --- knobs for this notebook (edit freely) ---
 FORCE = False                    # rebuild files that already exist?
-ONLY_MODELS = None                          # e.g. ["CanESM5"] to build just one model; None = all
+ONLY_MODELS = None               # e.g. ["CanESM5"] to build just one model; None = all
 WALKTHROUGH_MODEL = "CanESM5"    # coarse grid → fast, legible
 
 cat = open_catalog()
@@ -119,10 +121,10 @@ def sanity_check(da, var, label):
     years = da.year.values
     assert (years[1:] - years[:-1] == 1).all(), f"{label}: gap in years"
     gmean = float(da.weighted(np.cos(np.deg2rad(da.lat))).mean())
-    if var in ("tas", "toa"):
+    if var in ("tas", "toa", "ts"):
         assert not da.isnull().any(), f"{label}: unexpected NaNs in {var}"
-    if var == "tas":
-        assert 270 < gmean < 300, f"{label}: global tas {gmean:.1f} K implausible"
+    if var in ("tas", "ts"):                              # both surface temperatures (K)
+        assert 270 < gmean < 300, f"{label}: global {var} {gmean:.1f} K implausible"
     if var == "toa":
         assert abs(gmean) < 5, f"{label}: global toa {gmean:.2f} W/m² implausible"
     if var == "tos":

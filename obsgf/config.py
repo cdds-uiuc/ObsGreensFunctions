@@ -31,9 +31,11 @@ CANDIDATE_HIST_MODELS = CANDIDATE_AMIP_MODELS + ["CNRM-CM6-1", "GISS-E2-1-G"]
 
 # --- what to preprocess ----------------------------------------------------
 # experiment -> (variables, candidate models). "toa" is derived from rsdt-rsut-rlut.
-# Historical runs only feed the GF reconstruction, so only tos is needed from them.
+# "ts" (surface temperature) over open ocean IS the prescribed SST — a cleaner GF
+# predictor than tas (2-m air temp). Historical runs only feed the GF reconstruction,
+# so only tos is needed from them.
 PREPROCESS_SPEC = {
-    "amip-piForcing": (["tas", "toa"], CANDIDATE_AMIP_MODELS),
+    "amip-piForcing": (["tas", "toa", "ts"], CANDIDATE_AMIP_MODELS),
     "historical": (["tos"], CANDIDATE_HIST_MODELS),
 }
 
@@ -50,7 +52,7 @@ SFTLF_SOURCE = "piControl"
 # analysis roster is the set of models that have BOTH. Because GFs are per-model, the
 # historical analysis uses this same roster — not the broader set of models that merely
 # happen to report historical tos.
-REQUIRED_AMIP_VARS = ["tas", "toa"]
+REQUIRED_AMIP_VARS = ["tas", "toa", "ts"]   # ts = SST predictor; tas/toa = global targets
 
 
 def _preprocessed_models(experiment, variables):

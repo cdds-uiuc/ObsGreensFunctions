@@ -17,7 +17,7 @@ sys.path.insert(0, str(CATALOG_DIR))
 from preprocess import preprocess as pool_harmonize  # noqa: E402  (the pool's read-time hook)
 
 # CMIP table each variable lives in (Amon = atmosphere monthly, Omon = ocean, fx = static)
-TABLE_FOR_VAR = {"tas": "Amon", "toa": "Amon", "tos": "Omon", "sftlf": "fx"}
+TABLE_FOR_VAR = {"tas": "Amon", "toa": "Amon", "ts": "Amon", "tos": "Omon", "sftlf": "fx"}
 
 _DROP_PATTERNS = ("bnds", "bounds", "vertices")   # bounds/vertex vars we don't keep
 _REGULAR_TOL = 1e-2                                # deg; atmosphere grids are regular within this

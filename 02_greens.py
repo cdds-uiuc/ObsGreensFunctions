@@ -30,13 +30,15 @@ from obsgf.masks import ocean_mask, global_mean
 ALPHAS = np.logspace(0, 6, 25)   # ridge penalties to search over
 N_CV_BLOCKS = 5                  # blocked cross-validation folds (contiguous in time)
 HOLDOUT_LENGTH = 20              # length (yr) of each held-out validation segment
+PREDICTOR_LAT_BOUND = 55         # keep SST predictors within ±this latitude (avoid sea ice)
 WALKTHROUGH_MODEL = "CanESM5"
 
 # %% [markdown]
-# ## Anomalies and the two global-mean targets
+# ## The two global-mean targets
 #
 # Load tas and toa, take anomalies vs 1870–1919, and form the two things the GFs predict:
-# global-mean net TOA **N** and global-mean temperature **T**. Both are area-weighted.
+# global-mean net TOA **N** and global-mean temperature **T** (both area-weighted over the
+# *full* globe — λ is defined per unit global surface-air temperature).
 
 # %%
 def anomaly(da):
@@ -49,24 +51,31 @@ def load_amip(var, model):
     return ds[var].sel(year=slice(*ANALYSIS_YEARS))
 
 
-tas_anom = anomaly(load_amip("tas", WALKTHROUGH_MODEL))
-toa_anom = anomaly(load_amip("toa", WALKTHROUGH_MODEL))
-N = global_mean(toa_anom).values     # global-mean net TOA anomaly  (W/m²)
-T = global_mean(tas_anom).values     # global-mean temperature anomaly (K)
-year = tas_anom.year.values
+N = global_mean(anomaly(load_amip("toa", WALKTHROUGH_MODEL))).values   # global net TOA (W/m²)
+T = global_mean(anomaly(load_amip("tas", WALKTHROUGH_MODEL))).values   # global temperature (K)
+year = anomaly(load_amip("tas", WALKTHROUGH_MODEL)).year.values
 
 fig, (a1, a2) = plt.subplots(1, 2, figsize=(12, 3))
 a1.plot(year, N, "k"); a1.set_title(f"{WALKTHROUGH_MODEL}: N (global net TOA)"); a1.set_ylabel("W/m²")
 a2.plot(year, T, "k"); a2.set_title("T (global temperature)"); a2.set_ylabel("K");
 
 # %% [markdown]
-# ## Predictors: the ocean SST-anomaly pattern
+# ## Predictor: the ocean SST-anomaly pattern (from `ts`, within ±55°)
 #
-# The predictor for a given year is the map of tas anomalies at ocean points, flattened
-# to a vector. Columns are scaled by √cos(lat) so the ridge penalty is **area-fair** —
-# otherwise the many tiny high-latitude cells would dominate. Missing SST → 0.
+# The predictor is the map of **`ts` anomalies at ocean points** — over open ocean `ts`
+# *is* the prescribed SST, a cleaner signal than 2-m air temp. We restrict to |lat| ≤
+# `PREDICTOR_LAT_BOUND`: poleward of that, `ts` over sea ice is the ice-surface
+# temperature, not the ocean beneath (AMIP can't give us the ocean under ice), and those
+# cells carry little of the SST-forced radiation anyway. Columns are √cos(lat)-scaled so
+# the ridge penalty is area-fair; missing SST → 0.
 
 # %%
+def predictor_mask(model, lat_bound=PREDICTOR_LAT_BOUND):
+    """Ocean points within ±lat_bound — the cells whose ts we trust as SST."""
+    m = ocean_mask(model)
+    return m & (np.abs(m.lat) <= lat_bound)
+
+
 def ocean_points(mask):
     m = mask.stack(pt=("lat", "lon"))
     return m.pt[m.values]           # the ocean-point index (fixes column order)
@@ -81,13 +90,15 @@ def area_weights(X):
     return np.sqrt(np.clip(np.cos(np.deg2rad(X.lat.values)), 0, None))
 
 
-mask = ocean_mask(WALKTHROUGH_MODEL)
+ts_anom = anomaly(load_amip("ts", WALKTHROUGH_MODEL))   # SST proxy — the predictor field
+mask = predictor_mask(WALKTHROUGH_MODEL)
 pts = ocean_points(mask)
-X = ocean_sst_matrix(tas_anom, pts)      # (year, ocean-point) DataArray
+X = ocean_sst_matrix(ts_anom, pts)       # (year, ocean-point) DataArray
 w = area_weights(X)                      # √cos(lat) column scaling
 Xw = X.values * w                        # area-fair design matrix
-print("design matrix:", Xw.shape, "= (years, ocean points)")
-plotting.map_plot(mask.astype(float), title=f"{WALKTHROUGH_MODEL} ocean mask", cmap="Blues", cbar=False);
+print("design matrix:", Xw.shape, "= (years, ocean points within ±%d°)" % PREDICTOR_LAT_BOUND)
+plotting.map_plot(mask.astype(float), title=f"{WALKTHROUGH_MODEL} predictor mask (ocean, ±{PREDICTOR_LAT_BOUND}°)",
+                  cmap="Blues", cbar=False);
 
 # %% [markdown]
 # ## Ridge regression (dual form)
@@ -204,12 +215,14 @@ plotting.map_plot(G_toa, robust=True, cbar_label="∂N/∂T(x)  [W m⁻² K⁻¹
 # %%
 def fit_gf(model):
     """Fit both GFs for one model; save GF maps + amip N/T series; return skill rows."""
-    tas_a = anomaly(load_amip("tas", model))
-    toa_a = anomaly(load_amip("toa", model))
-    targets = {"toa": global_mean(toa_a).values, "tas": global_mean(tas_a).values}
-    m = ocean_mask(model)
+    # targets: global-mean net TOA (N) and global-mean temperature (T), full globe
+    targets = {"toa": global_mean(anomaly(load_amip("toa", model))).values,
+               "tas": global_mean(anomaly(load_amip("tas", model))).values}
+    # predictor: ocean ts anomalies within ±PREDICTOR_LAT_BOUND (the SST pattern)
+    ts_a = anomaly(load_amip("ts", model))
+    m = predictor_mask(model)
     p = ocean_points(m)
-    Xm = ocean_sst_matrix(tas_a, p)
+    Xm = ocean_sst_matrix(ts_a, p)
     wm = area_weights(Xm)
     Xwm = Xm.values * wm
 

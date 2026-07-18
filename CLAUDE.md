@@ -52,9 +52,21 @@ Key deps: xarray/dask/netcdf4/cftime (pangeo core), **intake-esm** + **xmip**
   `toa_Amon_CanESM5_amip-piForcing_r1i1p2f1_gn_1870-2014.nc`; plus one static
   `sftlf_<model>.nc` (land fraction) per model for the ocean masks.
 - **`derived/`** — GFs, reconstructions, feedback time series, ocean masks (small netcdfs).
-- Variables: `tas`, `toa` (= rsdt − rsut − rlut, net downward), `tos`, and static `sftlf`.
-  Analysis uses tas-over-ocean as the SST proxy for training (tos not reported in
-  amip-piForcing).
+- Variables: `tas`, `toa` (= rsdt − rsut − rlut, net downward), `ts`, `tos`, and static
+  `sftlf`.
+- **GF predictor = ocean `ts`, within ±55° latitude.** Over open ocean `ts` (surface
+  temperature) *is* the prescribed SST — a cleaner, causal predictor than `tas` (2-m air
+  temp, which is itself part of the response, so N-on-tas has inflated response-response
+  skill). The ±55° bound (`PREDICTOR_LAT_BOUND` in 02_greens) drops sea-ice cells, where
+  `ts` is the ice-surface temperature, not the ocean beneath (AMIP can't give the ocean
+  under ice). The **targets stay global `tas` (for T) and global `toa` (for N)**, full
+  globe — λ is per global surface-air temperature. So there are still two GFs (`G_tas`,
+  `G_toa`) sharing the ocean-`ts` predictor. Historical application is unchanged: the GF
+  is NaN poleward of ±55°, so applying it to full-globe `tos` automatically uses only the
+  ±55° cells. (Switching to `ts` lowers held-out reconstruction r² — partly healthy
+  de-inflation, partly the bound's cost to global-T via polar amplification — but the
+  *feedback* deliverable reproduces as well or better. `siconc` masking is a possible
+  later refinement to recover high-latitude open ocean.)
 
 ## Pipeline — three py-percent notebooks at the project root
 
@@ -66,7 +78,7 @@ outputs are skipped/overwritten identically):
 
 ```bash
 python 01_preprocess.py   # catalog -> pre-processed_data/ (annual means + sftlf)
-python 02_greens.py       # fit GFs + held-out validation -> derived/gf/, derived/series/, figures/
+python 02_greens.py       # fit GFs (ocean-ts predictor, ±55°) + held-out validation -> derived/gf/, series/, figures/
 python 03_feedbacks.py    # both feedback definitions, 3 estimates -> derived/feedbacks{,_hist_ensemble}.nc, figures/
 ```
 
