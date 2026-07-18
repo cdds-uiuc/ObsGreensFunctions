@@ -14,3 +14,8 @@ derived/
 
 # --- deprecated: tabled/scratch work, kept locally but out of git entirely ---
 deprecated/
+
+# --- initial-design docs: kept locally (and in early history), not carried forward ---
+PLAN.md
+earth-science-code-guidelines.md
+obsGF_design-doc.md
