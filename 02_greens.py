@@ -271,10 +271,12 @@ print(skill_table.groupby(["target", "segment"]).r2.mean().round(2).to_string())
 # %%
 import cartopy.crs as ccrs
 models = analysis_models()
-fig = plt.figure(figsize=(16, 7))
+ncols = 4
+nrows = int(np.ceil(len(models) / ncols))          # grid sized to the model count
+fig = plt.figure(figsize=(4 * ncols, 3 * nrows))
 for i, model in enumerate(models):
     g = xr.open_dataset(DERIVED_DIR / "gf" / f"GF_{model}.nc").G_toa
-    ax = plt.subplot(2, 4, i + 1, projection=ccrs.Robinson(central_longitude=180))
+    ax = plt.subplot(nrows, ncols, i + 1, projection=ccrs.Robinson(central_longitude=180))
     plotting.map_plot(g, ax=ax, robust=True, cbar=False, title=model)
 fig.suptitle("$G_{toa}$ Green's function per model (each scaled to its own P98)")
 config.FIGURES_DIR.mkdir(exist_ok=True)

@@ -220,20 +220,27 @@ def hist_of(var, m):
 
 
 def multipanel(var, x, xlabel, title, fname, ylim=None):
-    fig, axes = plt.subplots(2, 4, figsize=(18, 8), sharex=True, sharey=True)
-    for ax, m in zip(axes.flat, models):
-        plotting.ensemble_band(ax, x, hist_of(var, m), "tab:blue", f"CMIP6 hist (n={hist_of(var, m).shape[0]})")
-        for e, c in [("amip_true", "k"), ("amip_gf", "tab:red")]:
-            ax.plot(x, feedbacks[var].sel(model=m, estimate=e), color=c, lw=1.8, label=e.replace("_", " "))
-        ax.set_title(m); ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=6.5)
-    ax = axes.flat[7]
-    plotting.ensemble_band(ax, x, ens[var].values, "tab:blue", f"CMIP6 hist (all {ens.sizes['run']})")
-    for e, c in [("amip_true", "k"), ("amip_gf", "tab:red")]:
-        ax.plot(x, feedbacks[var].sel(estimate=e).mean("model"), color=c, lw=2, label=e.replace("_", " "))
-    ax.set_title("all models pooled"); ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=7)
-    if ylim: ax.set_ylim(*ylim)
-    for a in axes[:, 0]: a.set_ylabel("λ [W m⁻² K⁻¹]")
-    for a in axes[1, :]: a.set_xlabel(xlabel)
+    # one panel per model plus a pooled panel; grid sized to fit however many models
+    panels = list(models) + ["all models pooled"]
+    ncols = 4
+    nrows = int(np.ceil(len(panels) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.4 * nrows), sharey=True)
+    axf = axes.flat
+    for ax, name in zip(axf, panels):
+        if name == "all models pooled":                                  # pooled = every run
+            band, true_, gf_ = ens[var].values, feedbacks[var].sel(estimate="amip_true").mean("model"), feedbacks[var].sel(estimate="amip_gf").mean("model")
+        else:                                                            # one model
+            band, true_, gf_ = hist_of(var, name), feedbacks[var].sel(model=name, estimate="amip_true"), feedbacks[var].sel(model=name, estimate="amip_gf")
+        plotting.ensemble_band(ax, x, band, "tab:blue", f"CMIP6 hist (n={np.atleast_2d(band).shape[0]})")
+        ax.plot(x, true_, "k", lw=1.8, label="amip true")
+        ax.plot(x, gf_, "tab:red", lw=1.8, label="amip gf")
+        ax.set_title(name); ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=6.5); ax.set_xlabel(xlabel)
+    if ylim:
+        axf[0].set_ylim(*ylim)                 # sharey -> applies to all panels
+    for ax in axf[len(panels):]:               # hide any unused panels
+        ax.axis("off")
+    for r in range(nrows):
+        axf[r * ncols].set_ylabel("λ [W m⁻² K⁻¹]")
     fig.suptitle(title); fig.tight_layout()
     FIGURES_DIR.mkdir(exist_ok=True)
     fig.savefig(FIGURES_DIR / fname, dpi=110)

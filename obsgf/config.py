@@ -18,16 +18,16 @@ FIGURES_DIR = PROJECT_ROOT / "figures"
 CANDIDATE_AMIP_MODELS = [
     "CESM2",
     "CanESM5",
+    "CNRM-CM6-1",
     "HadGEM3-GC31-LL",
     "IPSL-CM6A-LR",
     "MIROC6",
     "MRI-ESM2-0",
     "TaiESM1",
 ]
-# GISS-E2-1-G (local amip-piForcing only 1950-1970) and CNRM-CM6-1 (no amip-piForcing
-# in the pool) can still supply historical tos, so we preprocess them — but they will
-# not enter the analysis, because a per-model GF can't be built for them.
-CANDIDATE_HIST_MODELS = CANDIDATE_AMIP_MODELS + ["CNRM-CM6-1", "GISS-E2-1-G"]
+# GISS-E2-1-G has local amip-piForcing for 1950-1970 only, so it can't build a GF; it can
+# still supply historical tos, so we preprocess it, but it won't enter the analysis.
+CANDIDATE_HIST_MODELS = CANDIDATE_AMIP_MODELS + ["GISS-E2-1-G"]
 
 # --- what to preprocess ----------------------------------------------------
 # experiment -> (variables, candidate models). "toa" is derived from rsdt-rsut-rlut.

@@ -151,12 +151,13 @@ smoothed T′ ≤ 0.2 K so the denominator stays a robust positive warming signa
   Both the GF and historical stages use this one roster, so the analysis auto-restricts
   to what preprocessing produced. Don't hardcode model lists in the analysis code —
   call `analysis_models()`.
-- **Currently 7:** CESM2, CanESM5, HadGEM3-GC31-LL, IPSL-CM6A-LR, MIROC6, MRI-ESM2-0,
-  TaiESM1.
-- **Dropped from the roster:** GISS-E2-1-G (local amip-piForcing only 1950–1970),
-  CNRM-CM6-1 (no amip-piForcing). A per-model GF must exist to reconstruct a historical
-  run, so historical is *not* run on the wider tos-reporting set; their historical tos
-  is not kept. Re-download a full GISS amip-piForcing run to include it.
+- **Currently 8:** CESM2, CanESM5, CNRM-CM6-1, HadGEM3-GC31-LL, IPSL-CM6A-LR, MIROC6,
+  MRI-ESM2-0, TaiESM1. (CNRM-CM6-1 added once its amip-piForcing was downloaded; 30
+  historical members.)
+- **Dropped from the roster:** GISS-E2-1-G (local amip-piForcing only 1950–1970, so no
+  GF). A per-model GF must exist to reconstruct a historical run, so historical is *not*
+  run on the wider tos-reporting set. Re-download a full GISS amip-piForcing run to
+  include it.
 - **`sftlf`** (land fraction, fx) is now in the catalog and extracted by preprocessing
   (`sftlf_<model>.nc`); no longer a manual download. Optionally `areacella` for exact
   area weights (currently cos-lat).
