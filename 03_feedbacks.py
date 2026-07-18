@@ -21,7 +21,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 from collections import namedtuple
 
-from obsgf import config, plotting
+from obsgf import config
 from obsgf.config import ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR, FIGURES_DIR, analysis_models, representative_member
 from obsgf.regrid import regrid_model
 
@@ -31,6 +31,19 @@ RATIO_START_YEAR = 1940   # cumulative ratio starts here (so T' is safely positi
 RATIO_SMOOTH = 5          # yr, centered running mean before the ratio
 RATIO_TMIN = 0.2          # K, ratio undefined where smoothed T' <= this (denominator guard)
 WALKTHROUGH_MODEL = "CanESM5"
+
+
+# %%
+# A small plotting helper used by the figures below: a member ensemble as a shaded
+# 5-95% band + mean line (a single member falls back to a plain line).
+def ensemble_band(ax, x, arr, color, label, pct=(5, 95)):
+    arr = np.atleast_2d(arr)
+    if arr.shape[0] == 1:
+        ax.plot(x, arr[0], color=color, lw=1.5, label=label)
+        return
+    lo, hi = np.nanpercentile(arr, pct[0], 0), np.nanpercentile(arr, pct[1], 0)
+    ax.fill_between(x, lo, hi, color=color, alpha=0.18)
+    ax.plot(x, np.nanmean(arr, 0), color=color, lw=2, label=label)
 
 # %% [markdown]
 # ## The two feedback definitions
@@ -147,7 +160,7 @@ for tos in tos_by_member.values():
 hist_windows = np.array(hist_windows)
 
 fig, ax = plt.subplots(figsize=(9, 3.4))
-plotting.ensemble_band(ax, centres, hist_windows, "tab:blue", f"hist GF (n={len(tos_by_member)})")
+ensemble_band(ax, centres, hist_windows, "tab:blue", f"hist GF (n={len(tos_by_member)})")
 ax.plot(centres, window_slopes(T_true, N_true, year), "k", lw=2, label="amip true")
 ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=8)
 ax.set_title(f"{WALKTHROUGH_MODEL}: amip vs historical ensemble"); ax.set_ylabel("λ [W m⁻² K⁻¹]");
@@ -231,7 +244,7 @@ def multipanel(var, x, xlabel, title, fname, ylim=None):
             band, true_, gf_ = ens[var].values, feedbacks[var].sel(estimate="amip_true").mean("model"), feedbacks[var].sel(estimate="amip_gf").mean("model")
         else:                                                            # one model
             band, true_, gf_ = hist_of(var, name), feedbacks[var].sel(model=name, estimate="amip_true"), feedbacks[var].sel(model=name, estimate="amip_gf")
-        plotting.ensemble_band(ax, x, band, "tab:blue", f"CMIP6 hist (n={np.atleast_2d(band).shape[0]})")
+        ensemble_band(ax, x, band, "tab:blue", f"CMIP6 hist (n={np.atleast_2d(band).shape[0]})")
         ax.plot(x, true_, "k", lw=1.8, label="amip true")
         ax.plot(x, gf_, "tab:red", lw=1.8, label="amip gf")
         ax.set_title(name); ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=6.5); ax.set_xlabel(xlabel)

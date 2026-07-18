@@ -92,7 +92,10 @@ trusted machinery, not the science:
 - `catalog.py` — all intake-esm / xmip catalog plumbing (imported only by 01)
 - `masks.py` — ocean masks + area-weighted global means
 - `regrid.py` — historical tos (ocean grid) → atmosphere grid (xesmf), cached
-- `plotting.py` — `map_plot`, `series_vs_truth`, `ensemble_band`
+
+Plotting helpers are *not* shared modules — each is used by only one notebook, so
+`map_plot` lives in a setup cell of `02_greens.py` and `ensemble_band` in `03_feedbacks.py`
+(a single-caller helper belongs with its caller; a one-function module is a smell).
 
 The scientific "meat" (annual means, the ridge, held-out validation, the two feedback
 definitions) lives **in the notebook cells**, defined right before use, so a first-year
@@ -130,7 +133,7 @@ smoothed T′ ≤ 0.2 K so the denominator stays a robust positive warming signa
 - **Exploratory science, readability first**:
   audience is a first-year atmospheric-sciences grad student. Keep the science at
   notebook-cell level with intermediates visible to plot/inspect; extract only boring,
-  trusted machinery (I/O, catalog, regridding, plotting) into `obsgf/`. Don't collapse an
+  trusted machinery (I/O, catalog, masking, regridding) into `obsgf/`. Don't collapse an
   inspectable multi-step computation into one opaque function. Not production code.
 - **Keep it simple**: plain functions, no classes/frameworks. Don't add flexibility the
   project doesn't need.

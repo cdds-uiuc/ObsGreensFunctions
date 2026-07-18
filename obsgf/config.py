@@ -29,6 +29,19 @@ CANDIDATE_AMIP_MODELS = [
 # still supply historical tos, so we preprocess it, but it won't enter the analysis.
 CANDIDATE_HIST_MODELS = CANDIDATE_AMIP_MODELS + ["GISS-E2-1-G"]
 
+
+# --- shared analysis constants ---------------------------------------------
+# Only constants used by more than one place live here; single-notebook knobs (ridge
+# alphas, window length, ratio settings) sit in visible cells at the top of their
+# notebook, where they belong for exploratory work.
+#
+# Common analysis window: models differ at the edges (TaiESM1 starts 1850, CESM2 runs
+# to 2015); clip everything to this shared span so windows and holdouts align.
+ANALYSIS_YEARS = (1870, 2014)  # used by 02_greens and 03_feedbacks
+BASELINE_YEARS = (1870, 1919)  # anomaly reference climatology (first 50 yrs); both notebooks
+OCEAN_SFTLF_MAX = 50.0         # cell is "ocean" if land fraction < this (%); used by masks.py
+
+
 # --- what to preprocess ----------------------------------------------------
 # experiment -> (variables, candidate models). "toa" is derived from rsdt-rsut-rlut.
 # "ts" (surface temperature) over open ocean IS the prescribed SST — a cleaner GF
@@ -121,14 +134,3 @@ def representative_member(model):
     members = historical_members(model)
     return amip_member if amip_member in members else members[0]
 
-
-# --- shared analysis constants ---------------------------------------------
-# Only constants used by more than one place live here; single-notebook knobs (ridge
-# alphas, window length, ratio settings) sit in visible cells at the top of their
-# notebook, where they belong for exploratory work.
-#
-# Common analysis window: models differ at the edges (TaiESM1 starts 1850, CESM2 runs
-# to 2015); clip everything to this shared span so windows and holdouts align.
-ANALYSIS_YEARS = (1870, 2014)  # used by 02_greens and 03_feedbacks
-BASELINE_YEARS = (1870, 1919)  # anomaly reference climatology (first 50 yrs); both notebooks
-OCEAN_SFTLF_MAX = 50.0         # cell is "ocean" if land fraction < this (%); used by masks.py

@@ -20,8 +20,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
 
-from obsgf import config, plotting
+from obsgf import config
 from obsgf.config import (ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR,
                           analysis_models, find_preprocessed)
 from obsgf.masks import ocean_mask, global_mean
@@ -33,11 +34,30 @@ HOLDOUT_LENGTH = 20              # length (yr) of each held-out validation segme
 PREDICTOR_LAT_BOUND = 55         # keep SST predictors within ±this latitude (avoid sea ice)
 WALKTHROUGH_MODEL = "CanESM5"
 
+
+# %%
+# A small map helper (Robinson projection, coastlines, optional 98th-pct scaling), used
+# for the mask and GF maps below — the cartopy boilerplate kept out of the science cells.
+def map_plot(da, ax=None, title=None, vmin=None, vmax=None, cmap="RdBu_r",
+             robust=False, cbar=True, cbar_label=None):
+    if ax is None:
+        ax = plt.axes(projection=ccrs.Robinson(central_longitude=180))
+    if robust and vmin is None:
+        v = float(np.nanpercentile(np.abs(da.values), 98))
+        vmin, vmax = -v, v
+    da = da.sortby(["lat", "lon"])          # guard against descending / wrapped coords
+    p = da.plot(ax=ax, transform=ccrs.PlateCarree(), cmap=cmap, vmin=vmin, vmax=vmax,
+                add_colorbar=cbar, cbar_kwargs={"label": cbar_label, "shrink": 0.7} if cbar else None)
+    ax.coastlines(lw=0.4)
+    if title:
+        ax.set_title(title)
+    return p
+
 # %% [markdown]
 # ## The two global-mean targets
 #
 # Load tas and toa, take anomalies vs 1870–1919, and form the two things the GFs predict:
-# global-mean net TOA **N** and global-mean temperature **T** (both area-weighted over the
+# global-mean net TOA **N** and global-\mean temperature **T** (both area-weighted over the
 # *full* globe — λ is defined per unit global surface-air temperature).
 
 # %%
@@ -97,7 +117,7 @@ X = ocean_sst_matrix(ts_anom, pts)       # (year, ocean-point) DataArray
 w = area_weights(X)                      # √cos(lat) column scaling
 Xw = X.values * w                        # area-fair design matrix
 print("design matrix:", Xw.shape, "= (years, ocean points within ±%d°)" % PREDICTOR_LAT_BOUND)
-plotting.map_plot(mask.astype(float), title=f"{WALKTHROUGH_MODEL} predictor mask (ocean, ±{PREDICTOR_LAT_BOUND}°)",
+map_plot(mask.astype(float), title=f"{WALKTHROUGH_MODEL} predictor mask (ocean, ±{PREDICTOR_LAT_BOUND}°)",
                   cmap="Blues", cbar=False);
 
 # %% [markdown]
@@ -202,7 +222,7 @@ def gf_map(g, pts, mask):
 beta_N = dual_ridge(Xw, N, select_alpha(Xw, N))
 G_toa = gf_map(w * beta_N, pts, mask)          # physical units (applies to unscaled SST)
 fig = plt.figure(figsize=(8, 4))
-plotting.map_plot(G_toa, robust=True, cbar_label="∂N/∂T(x)  [W m⁻² K⁻¹ per cell]",
+map_plot(G_toa, robust=True, cbar_label="∂N/∂T(x)  [W m⁻² K⁻¹ per cell]",
                   title=f"{WALKTHROUGH_MODEL}  $G_{{toa}}$");
 
 # %% [markdown]
@@ -269,7 +289,6 @@ print(skill_table.groupby(["target", "segment"]).r2.mean().round(2).to_string())
 # reconstructed well from the SST pattern; N (noisier, cloud-dominated) is harder.
 
 # %%
-import cartopy.crs as ccrs
 models = analysis_models()
 ncols = 4
 nrows = int(np.ceil(len(models) / ncols))          # grid sized to the model count
@@ -277,7 +296,7 @@ fig = plt.figure(figsize=(4 * ncols, 3 * nrows))
 for i, model in enumerate(models):
     g = xr.open_dataset(DERIVED_DIR / "gf" / f"GF_{model}.nc").G_toa
     ax = plt.subplot(nrows, ncols, i + 1, projection=ccrs.Robinson(central_longitude=180))
-    plotting.map_plot(g, ax=ax, robust=True, cbar=False, title=model)
+    map_plot(g, ax=ax, robust=True, cbar=False, title=model)
 fig.suptitle("$G_{toa}$ Green's function per model (each scaled to its own P98)")
 config.FIGURES_DIR.mkdir(exist_ok=True)
 fig.savefig(config.FIGURES_DIR / "gf_toa_maps.png", dpi=110, bbox_inches="tight");
