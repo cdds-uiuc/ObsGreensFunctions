@@ -296,5 +296,3 @@ fig.savefig(config.FIGURES_DIR / "gf_toa_maps.png", dpi=110, bbox_inches="tight"
 # %%
 pivot = skill_table.pivot_table(index="segment", columns="target", values="r2", aggfunc="mean")
 print(pivot.round(2))
-
-# %%

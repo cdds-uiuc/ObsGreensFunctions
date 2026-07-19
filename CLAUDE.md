@@ -79,11 +79,17 @@ outputs are skipped/overwritten identically):
 ```bash
 python 01_preprocess.py   # catalog -> pre-processed_data/ (annual means + sftlf)
 python 02_greens.py       # fit GFs (ocean-ts predictor, ±55°) + held-out validation -> derived/gf/, series/, figures/
-python 03_feedbacks.py    # both feedback definitions, 3 estimates -> derived/feedbacks{,_hist_ensemble}.nc, figures/
+python 03_feedbacks.py    # windowed feedback (2 methods), 3 estimates -> derived/feedbacks_win{N}{,_hist_ensemble}.nc, figures/
 ```
 
 Knobs live in visible cells at the top of each notebook (`FORCE`, `ONLY_MODELS`, `ALPHAS`,
-`WINDOW_LENGTH`, `RATIO_*`, `WALKTHROUGH_MODEL`) — no CLI.
+`WINDOW_LENGTH`, `WALKTHROUGH_MODEL`) — no CLI.
+
+**This project lives in Dropbox.** `derived/` and `pre-processed_data/` are marked
+`com.dropbox.ignored` (`xattr -w com.dropbox.ignored 1 <dir>`) so Dropbox doesn't race the
+pipeline's many netcdf writes — otherwise it intermittently locks a file mid-write, giving a
+`PermissionError`/0-byte output (it bit us repeatedly, e.g. `GF_<model>.nc`). If a run still
+hits it, quit Dropbox for the run and relaunch after.
 
 **`obsgf/` is now helper modules only** (imported by the notebooks), per the
 exploratory-science split (extract only boring machinery; keep the science in cells) —
@@ -97,9 +103,16 @@ Plotting helpers are *not* shared modules — each is used by only one notebook,
 `map_plot` lives in a setup cell of `02_greens.py` and `ensemble_band` in `03_feedbacks.py`
 (a single-caller helper belongs with its caller; a one-function module is a smell).
 
-The scientific "meat" (annual means, the ridge, held-out validation, the two feedback
-definitions) lives **in the notebook cells**, defined right before use, so a first-year
-grad student reads the method top-to-bottom without opening a module.
+The scientific "meat" (annual means, the ridge fit (scikit-learn `KernelRidge`, blocked-CV
+α), held-out validation, the windowed feedback computed two ways) lives **in the notebook
+cells**, defined right before use, so a first-year grad student reads the method
+top-to-bottom without opening a module.
+
+The three stages also open as real Jupyter notebooks: `jupytext --to notebook 0X.py`
+(kernel `python3` from the env); convert back with `jupytext --to py:percent 0X.ipynb`. The
+`.py` are the tracked source of truth; the `.ipynb` are gitignored/regenerable. They are
+*not* auto-paired, so edits made in the `.ipynb` must be synced back (`jupytext --to
+py:percent 0X.ipynb`) or they diverge from the `.py`.
 
 **Synthetic SST (extension point, currently tabled).** The GFs can be forced with any
 external SST ensemble (synthetic or observed), not just historical tos. The seam is a
@@ -114,19 +127,33 @@ and does not depend on any of it.
 Historical is a **member ensemble**: preprocessing emits one tos file per member, regrid
 builds the xesmf weights once per model and applies to all members, and feedbacks loops
 members. `historical_members(model)` / `representative_member(model)` (config) enumerate
-them. Outputs: `feedbacks.nc` = 3-estimate comparison on the representative member
-(dims `model, estimate, center_year`); `feedbacks_hist_ensemble.nc` = every member's
-hist_gf λ, run-indexed (dims `run, center_year` with `model`/`member` coords) to handle
-ragged per-model counts. To add members: drop new tos in the pool, rerun
+them. Outputs (window length in the name): `feedbacks_win{N}.nc` = 3-estimate comparison on
+the representative member (dims `model, estimate, end_year`); `feedbacks_hist_ensemble_win{N}.nc`
+= every member's hist_gf λ, run-indexed (dims `run, end_year` with `model`/`member` coords)
+to handle ragged per-model counts. To add members: drop new tos in the pool, rerun
 preprocess→regrid→feedbacks; the roster/ensemble grow automatically.
 
 The estimate dimension is named **`estimate`** (`amip_true`, `amip_gf`, `hist_gf`) —
 *not* `method`, which collides with xarray's `.sel(method=...)` fill-method kwarg.
 
-**Two feedback definitions**, both in the feedbacks files: `feedback_window` (30-yr
-window slope of N′ on T′, coord `center_year`) and `feedback_ratio` (cumulative
-N′(t)/T′(t) vs the 1870–1919 baseline, coord `year`, from 1940, 5-yr smoothed, NaN where
-smoothed T′ ≤ 0.2 K so the denominator stays a robust positive warming signal).
+**Windowed feedback, two ways.** λ is a sliding-window estimate (default 35-yr,
+`WINDOW_LENGTH`), computed two ways within each window and stored in the feedbacks files,
+indexed by window **end year** (`end_year`):
+- `feedback_slope` — OLS slope of N′ on T′ in the window (Gregory-style, *with* intercept:
+  the window means of N′,T′ are nonzero, being anomalies vs pre-industrial). The direct,
+  local feedback; internal N′–T′ covariance (ENSO) enters it.
+- `feedback_trend_ratio` — ratio of the time-trends of N′ and T′ (each regressed on year in
+  the window). A low-pass estimate — high-frequency internal covariance doesn't alias in —
+  but only stable where the window has a solid warming trend (it blows up in early windows
+  where the T′ trend crosses zero).
+
+Figures: only the **slope** gets a per-model time series (`feedbacks_slope_win{N}.png`,
+x = window end year). **Both** methods are compared over the single last window (ending 2014,
+where each is stable) as per-model distributions — a KDE of the historical member ensemble
+with the amip truth (black) and GF reconstruction (red, dashed) as vertical lines
+(`feedbacks_lastwindow_{slope,trendratio}_win{N}.png`). `WINDOW_LENGTH` is in every output
+filename, so re-running at 30/35/40 accumulates rather than overwrites. (The earlier
+cumulative-ratio definition was dropped.)
 
 ## Conventions
 

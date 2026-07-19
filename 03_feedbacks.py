@@ -12,25 +12,23 @@
 # - **amip_gf**   — GF reconstruction of the same run (the method vs truth)
 # - **hist_gf**   — GFs applied to historical tos, one value per ensemble member
 #
-# Two feedback **definitions**: a 30-yr sliding-window slope, and a cumulative ratio
-# N′(t)/T′(t). We walk through CanESM5, then batch over all models.
+# The feedback is a **sliding-window** estimate, computed two ways (below). We show the
+# full time series only for the direct slope, and compare both methods over the single last
+# window (ending 2014), where each is stable. `WINDOW_LENGTH` carries into every filename.
 
 # %%
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 from collections import namedtuple
-from scipy.stats import linregress
+from scipy.stats import linregress, gaussian_kde
 
 from obsgf import config
 from obsgf.config import ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR, FIGURES_DIR, MODELS, representative_member
 from obsgf.regrid import regrid_model
 
 # --- knobs for this notebook (edit freely) ---
-WINDOW_LENGTH = 30        # yr, sliding-window feedback regression
-RATIO_START_YEAR = 1940   # cumulative ratio starts here (so T' is safely positive)
-RATIO_SMOOTH = 5          # yr, centered running mean before the ratio
-RATIO_TMIN = 0.2          # K, ratio undefined where smoothed T' <= this (denominator guard)
+WINDOW_LENGTH = 35        # yr, sliding-window length (carried into output filenames)
 WALKTHROUGH_MODEL = "CanESM5"
 
 
@@ -48,39 +46,37 @@ def ensemble_band(ax, x, arr, color, label, pct=(5, 95)):
     ax.plot(x, np.nanmean(arr, 0), color=color, lw=2, label=label)
 
 # %% [markdown]
-# ## The two feedback definitions
+# ## Two ways to get λ within a window
 #
-# **Window:** the OLS slope of N′ on T′ in each 30-yr window (a local, decadal feedback).
-# **Ratio:** cumulative N′(t)/T′(t) vs the 1870–1919 baseline. The ratio blows up when T′
-# nears zero, so we smooth first and only define it where smoothed T′ > 0.2 K. The next
-# cell shows why that guard is needed.
+# Both slide a `WINDOW_LENGTH`-year window along the record and return one λ per window,
+# plotted against the window's **end year**.
+#
+# **(1) slope:** the OLS slope of N′ on T′ inside the window (with intercept — the window
+# means of N′, T′ are nonzero, being anomalies vs pre-industrial). The local feedback, but
+# internal covariance (ENSO) between N′ and T′ enters it.
+#
+# **(2) trend ratio:** regress N′ and T′ separately on *time* within the window and take the
+# ratio of the two trends. The linear-in-time fit is a low-pass filter, so high-frequency
+# internal covariance does not alias into λ.
 
 # %%
-def _smooth(a, w):
-    """Centered running mean of width w, NaN-padded at the edges to keep length."""
-    if w <= 1:
-        return np.asarray(a, dtype=float)
-    valid = np.convolve(a, np.ones(w) / w, mode="valid")
-    out = np.full(len(a), np.nan)
-    out[w // 2: w // 2 + len(valid)] = valid
-    return out
-
-
-def window_centres(years, win=WINDOW_LENGTH):
-    """Centre year of each length-`win` sliding window — the x-axis for the window feedback."""
-    return np.array([float(np.mean(years[i:i + win])) for i in range(len(years) - win + 1)])
+def window_end_years(years, win=WINDOW_LENGTH):
+    """End year of each length-`win` sliding window — the x-axis for the windowed feedbacks."""
+    return np.asarray(years[win - 1:], dtype=float)
 
 
 def window_slopes(T, N, years, win=WINDOW_LENGTH):
-    """Feedback λ in each sliding window: slope of N' on T' over `win` years."""
-    return np.array([linregress(T[i:i + win], N[i:i + win]).slope for i in range(len(years) - win + 1)])
+    """Feedback λ per window (method 1): OLS slope of N' on T' over `win` years."""
+    return np.array([linregress(T[i:i + win], N[i:i + win]).slope
+                     for i in range(len(years) - win + 1)])
 
 
-def cumulative_ratio(T, N, years, start=RATIO_START_YEAR, smooth=RATIO_SMOOTH, tmin=RATIO_TMIN):
-    """N'(t)/T'(t) from `start` onward; NaN where smoothed T' <= tmin (denominator guard)."""
-    Ts = _smooth(T, smooth)
-    lam = np.where(Ts > tmin, _smooth(N, smooth) / Ts, np.nan)
-    return lam[years >= start]
+def window_trend_ratio(T, N, years, win=WINDOW_LENGTH):
+    """Feedback λ per window (method 2): ratio of the time-trends of N' and T' (each
+    regressed on year within the window). Low-pass — internal covariance doesn't alias in."""
+    return np.array([linregress(years[i:i + win], N[i:i + win]).slope
+                     / linregress(years[i:i + win], T[i:i + win]).slope
+                     for i in range(len(years) - win + 1)])
 
 # %% [markdown]
 # ## Assemble the three estimates' N′, T′ series
@@ -109,83 +105,55 @@ def hist_series(gf, tos):
     tos_a = anomaly(tos.sel(year=slice(*ANALYSIS_YEARS)))
     return (tos_a.year.values, reconstruct(gf.G_tas, tos_a).values, reconstruct(gf.G_toa, tos_a).values)
 
-
-gf = xr.open_dataset(DERIVED_DIR / "gf" / f"GF_{WALKTHROUGH_MODEL}.nc")
-tos_by_member = regrid_model(WALKTHROUGH_MODEL)
-rep_member = representative_member(WALKTHROUGH_MODEL)
-yr_hist, T_hist, N_hist = hist_series(gf, tos_by_member[rep_member])
-
-# guard demo: the raw ratio without the T'>0.2 guard blows up when T' crosses zero
-raw_ratio = _smooth(N_hist, RATIO_SMOOTH) / _smooth(T_hist, RATIO_SMOOTH)
-plt.figure(figsize=(9, 3))
-plt.plot(yr_hist, raw_ratio, "0.6", label="no guard (blows up)")
-plt.plot(yr_hist[yr_hist >= RATIO_START_YEAR],
-         cumulative_ratio(T_hist, N_hist, yr_hist), "tab:blue", lw=2, label="guarded ratio")
-plt.ylim(-6, 4); plt.axhline(0, color="k", lw=0.4); plt.legend()
-plt.title(f"{WALKTHROUGH_MODEL} {rep_member}: why the ratio needs a denominator guard");
-
 # %% [markdown]
-# ## Walkthrough: amip feedback, truth vs GF
+# ## Walkthrough: amip feedback (slope method), truth vs GF, vs the historical ensemble
 #
-# Where the GF reconstruction (red) tracks the truth (black), the method works — including
-# the late-century trend to more-negative λ, the pattern effect.
+# The slope-method λ time series for CanESM5: the GF reconstruction (red) tracks the truth
+# (black) — including the late-century trend to more-negative λ, the pattern effect — and the
+# historical ensemble band (blue) is the coupled model's natural variability of λ.
 
 # %%
 year, T_true, N_true = amip_series(WALKTHROUGH_MODEL)["amip_true"]
 _, T_gf, N_gf = amip_series(WALKTHROUGH_MODEL)["amip_gf"]
-centres = window_centres(year)
+ends = window_end_years(year)
 
-fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 3.4))
-a1.plot(centres, window_slopes(T_true, N_true, year), "k", label="amip true")
-a1.plot(centres, window_slopes(T_gf, N_gf, year), "tab:red", label="amip GF")
-a1.set_title(f"{WALKTHROUGH_MODEL}: 30-yr window λ"); a1.set_xlabel("window centre"); a1.legend(fontsize=8)
-ry = year[year >= RATIO_START_YEAR]
-a2.plot(ry, cumulative_ratio(T_true, N_true, year), "k", label="amip true")
-a2.plot(ry, cumulative_ratio(T_gf, N_gf, year), "tab:red", label="amip GF")
-a2.set_title("cumulative λ = N′/T′"); a2.set_xlabel("year"); a2.legend(fontsize=8)
-for a in (a1, a2): a.axhline(0, color="0.7", lw=0.5); a.set_ylabel("λ [W m⁻² K⁻¹]");
-
-# %% [markdown]
-# ## Walkthrough: the historical ensemble for this model
-#
-# Apply the GFs to every historical member's SST and overlay the spread (blue) on the
-# amip trajectory (black). The blue band is the coupled model's natural variability of λ.
-
-# %%
-hist_windows = []
+gf = xr.open_dataset(DERIVED_DIR / "gf" / f"GF_{WALKTHROUGH_MODEL}.nc")
+tos_by_member = regrid_model(WALKTHROUGH_MODEL)
+hist_slopes = []
 for tos in tos_by_member.values():
     yr_h, T_h, N_h = hist_series(gf, tos)
-    hist_windows.append(window_slopes(T_h, N_h, yr_h))
-hist_windows = np.array(hist_windows)
+    hist_slopes.append(window_slopes(T_h, N_h, yr_h))
 
 fig, ax = plt.subplots(figsize=(9, 3.4))
-ensemble_band(ax, centres, hist_windows, "tab:blue", f"hist GF (n={len(tos_by_member)})")
-ax.plot(centres, window_slopes(T_true, N_true, year), "k", lw=2, label="amip true")
-ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=8)
-ax.set_title(f"{WALKTHROUGH_MODEL}: amip vs historical ensemble"); ax.set_ylabel("λ [W m⁻² K⁻¹]");
+ensemble_band(ax, ends, np.array(hist_slopes), "tab:blue", f"hist GF (n={len(tos_by_member)})")
+ax.plot(ends, window_slopes(T_true, N_true, year), "k", lw=2, label="amip true")
+ax.plot(ends, window_slopes(T_gf, N_gf, year), "tab:red", lw=1.5, label="amip GF")
+ax.axhline(0, color="0.7", lw=0.5); ax.set_ylim(-4, 1.5); ax.legend(fontsize=8)
+ax.set_title(f"{WALKTHROUGH_MODEL}: window λ (slope of N′ on T′)")
+ax.set_xlabel(f"{WINDOW_LENGTH}-yr window end year"); ax.set_ylabel("λ [W m⁻² K⁻¹]");
 
 # %% [markdown]
-# ## Batch: both definitions, three estimates, every model
+# ## Batch: both methods, three estimates, every model
 #
-# For each model we turn every estimate's (T′, N′) into a `Feedback` (window + ratio).
-# amip has one series each; historical is a per-member ensemble. Two datasets come out:
-# `feedbacks.nc` (representative member) and `feedbacks_hist_ensemble.nc` (all members).
+# For each model we turn every estimate's (T′, N′) into a `Feedback` (both window methods).
+# amip has one series each; historical is a per-member ensemble. Two datasets come out, the
+# window length in their name: `feedbacks_win{W}.nc` (representative member) and
+# `feedbacks_hist_ensemble_win{W}.nc` (all members).
 
 # %%
 ESTIMATES = ["amip_true", "amip_gf", "hist_gf"]
-Feedback = namedtuple("Feedback", ["window", "ratio"])
+Feedback = namedtuple("Feedback", ["slope", "trend_ratio"])
 Run = namedtuple("Run", ["model", "member", "feedback"])
 
 
 def feedback_of(years, T, N):
-    """Both feedback definitions (window slopes + cumulative ratio) for one (T', N') series."""
-    return Feedback(window_slopes(T, N, years), cumulative_ratio(T, N, years))
+    """Both windowed feedback estimates for one (T', N') series: slope, and trend ratio."""
+    return Feedback(window_slopes(T, N, years), window_trend_ratio(T, N, years))
 
 
 models = MODELS
 shared_years = amip_series(models[0])["amip_true"][0]
-center_year = window_centres(shared_years)
-ratio_year = shared_years[shared_years >= RATIO_START_YEAR]
+end_year = window_end_years(shared_years)
 
 rep, ensemble = {}, []
 for model in models:
@@ -201,31 +169,32 @@ for model in models:
     print(f"{model:16s} {sum(r.model == model for r in ensemble):3d} members")
 
 # %%
-# representative-member dataset: (model, estimate, time)
-window = np.array([[rep[(m, e)].window for e in ESTIMATES] for m in models])
-ratio = np.array([[rep[(m, e)].ratio for e in ESTIMATES] for m in models])
+# representative-member dataset: (model, estimate, end_year)
+slope = np.array([[rep[(m, e)].slope for e in ESTIMATES] for m in models])
+tratio = np.array([[rep[(m, e)].trend_ratio for e in ESTIMATES] for m in models])
 feedbacks = xr.Dataset(
-    {"feedback_window": (("model", "estimate", "center_year"), window),
-     "feedback_ratio": (("model", "estimate", "year"), ratio)},
-    coords={"model": models, "estimate": ESTIMATES, "center_year": center_year, "year": ratio_year})
-feedbacks.to_netcdf(DERIVED_DIR / "feedbacks.nc")
+    {"feedback_slope": (("model", "estimate", "end_year"), slope),
+     "feedback_trend_ratio": (("model", "estimate", "end_year"), tratio)},
+    coords={"model": models, "estimate": ESTIMATES, "end_year": end_year})
+feedbacks.to_netcdf(DERIVED_DIR / f"feedbacks_win{WINDOW_LENGTH}.nc")
 
 # ensemble dataset: run-indexed over every historical member
 ens = xr.Dataset(
-    {"feedback_window": (("run", "center_year"), np.array([r.feedback.window for r in ensemble])),
-     "feedback_ratio": (("run", "year"), np.array([r.feedback.ratio for r in ensemble]))},
+    {"feedback_slope": (("run", "end_year"), np.array([r.feedback.slope for r in ensemble])),
+     "feedback_trend_ratio": (("run", "end_year"), np.array([r.feedback.trend_ratio for r in ensemble]))},
     coords={"run": np.arange(len(ensemble)),
             "model": ("run", [r.model for r in ensemble]),
             "member": ("run", [r.member for r in ensemble]),
-            "center_year": center_year, "year": ratio_year})
-ens.to_netcdf(DERIVED_DIR / "feedbacks_hist_ensemble.nc")
-print(f"saved feedbacks.nc and feedbacks_hist_ensemble.nc ({len(ensemble)} runs)")
+            "end_year": end_year})
+ens.to_netcdf(DERIVED_DIR / f"feedbacks_hist_ensemble_win{WINDOW_LENGTH}.nc")
+print(f"saved feedbacks_win{WINDOW_LENGTH}.nc and feedbacks_hist_ensemble_win{WINDOW_LENGTH}.nc ({len(ensemble)} runs)")
 
 # %% [markdown]
-# ## Figures: the deliverable, per model
+# ## Figure: slope-method feedback time series, per model
 #
-# amip_true (black) & amip_gf (red) against the CMIP6-historical ensemble band (blue).
-# The late-century amip swing to more-negative λ reaches the edge of the coupled spread.
+# amip_true (black) & amip_gf (red) against the CMIP6-historical ensemble band (blue), per
+# model. Only the direct slope of N′ on T′ gets a time series (the trend ratio is unstable
+# in early windows); both methods are compared over the last window in the next figure.
 
 # %%
 def hist_of(var, m):
@@ -234,25 +203,22 @@ def hist_of(var, m):
 
 
 def multipanel(var, x, xlabel, title, fname, ylim=None):
-    """Grid of per-model panels + a pooled panel: amip true/gf lines over the historical band; saves `fname`."""
-    # one panel per model plus a pooled panel; grid sized to fit however many models
-    panels = list(models) + ["all models pooled"]
+    """Grid of per-model panels: amip true/gf lines over the historical band; saves `fname`."""
     ncols = 4
-    nrows = int(np.ceil(len(panels) / ncols))
+    nrows = int(np.ceil(len(models) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.4 * nrows), sharey=True)
     axf = axes.flat
-    for ax, name in zip(axf, panels):
-        if name == "all models pooled":                                  # pooled = every run
-            band, true_, gf_ = ens[var].values, feedbacks[var].sel(estimate="amip_true").mean("model"), feedbacks[var].sel(estimate="amip_gf").mean("model")
-        else:                                                            # one model
-            band, true_, gf_ = hist_of(var, name), feedbacks[var].sel(model=name, estimate="amip_true"), feedbacks[var].sel(model=name, estimate="amip_gf")
+    for ax, name in zip(axf, models):
+        band = hist_of(var, name)
+        true_ = feedbacks[var].sel(model=name, estimate="amip_true")
+        gf_ = feedbacks[var].sel(model=name, estimate="amip_gf")
         ensemble_band(ax, x, band, "tab:blue", f"CMIP6 hist (n={np.atleast_2d(band).shape[0]})")
         ax.plot(x, true_, "k", lw=1.8, label="amip true")
         ax.plot(x, gf_, "tab:red", lw=1.8, label="amip gf")
         ax.set_title(name); ax.axhline(0, color="0.7", lw=0.5); ax.legend(fontsize=6.5); ax.set_xlabel(xlabel)
     if ylim:
         axf[0].set_ylim(*ylim)                 # sharey -> applies to all panels
-    for ax in axf[len(panels):]:               # hide any unused panels
+    for ax in axf[len(models):]:               # hide any unused panels
         ax.axis("off")
     for r in range(nrows):
         axf[r * ncols].set_ylabel("λ [W m⁻² K⁻¹]")
@@ -261,24 +227,55 @@ def multipanel(var, x, xlabel, title, fname, ylim=None):
     fig.savefig(FIGURES_DIR / fname, dpi=110)
 
 
-multipanel("feedback_window", center_year, "window centre year",
-           "30-yr window radiative feedback: amip-piForcing vs CMIP6-historical ensemble", "feedbacks.png")
-multipanel("feedback_ratio", ratio_year, "year",
-           "Cumulative feedback λ = N′/T′: amip-piForcing vs CMIP6-historical ensemble",
-           "feedbacks_ratio.png", ylim=(-4, 1))
+multipanel("feedback_slope", end_year, f"{WINDOW_LENGTH}-yr window end year",
+           f"Windowed feedback λ = slope of N′ on T′  ({WINDOW_LENGTH}-yr windows)",
+           f"feedbacks_slope_win{WINDOW_LENGTH}.png", ylim=(-4, 1.5))
 
 # %% [markdown]
-# ## Summary: early vs late, both definitions
+# ## Figures: last-window feedback distribution, per model, one figure per method
+#
+# λ over the final window (ending 2014) — the recent, strong-pattern-effect interval where
+# both methods are stable. One panel per model: a KDE of that model's historical members
+# (each member a thin line), with its amip-piForcing truth (black) and GF reconstruction
+# (red) as thick vertical lines. One figure per method.
 
 # %%
-import pandas as pd
-rows = []
-for name, da, axis in [("window", feedbacks.feedback_window, center_year),
-                       ("ratio", feedbacks.feedback_ratio, ratio_year)]:
-    arr = da.values
-    fin = np.where(np.isfinite(arr).all(axis=(0, 1)))[0]
-    for j, e in enumerate(ESTIMATES):
-        rows.append({"definition": name, "estimate": e,
-                     f"early~{axis[fin[0]]:.0f}": round(float(np.nanmean(arr[:, j, fin[0]])), 2),
-                     f"late~{axis[fin[-1]]:.0f}": round(float(np.nanmean(arr[:, j, fin[-1]])), 2)})
-pd.DataFrame(rows)
+def lastwindow_panels(var, title, fname, xlim=(-5, 0)):
+    """Per-model grid of the last-window feedback: a KDE of the model's historical members
+    with each member as a thin line, and the model's amip_true (black) and amip_gf (red) as
+    thick vertical lines. Saves `fname`."""
+    ncols = 4
+    nrows = int(np.ceil(len(models) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.0 * nrows))
+    grid = np.linspace(*xlim, 300)
+    axf = axes.flat
+    for ax, name in zip(axf, models):
+        memb = hist_of(var, name)[:, -1]
+        at = float(feedbacks[var].sel(model=name, estimate="amip_true").values[-1])
+        ag = float(feedbacks[var].sel(model=name, estimate="amip_gf").values[-1])
+        for v in memb:                                               # each member: a thin line
+            ax.axvline(v, color="tab:blue", lw=0.5, alpha=0.25)
+        if len(memb) > 1 and np.ptp(memb) > 0:                       # KDE needs >1 point with spread
+            pdf = gaussian_kde(memb)(grid)
+            ax.fill_between(grid, pdf, color="tab:blue", alpha=0.15)
+            ax.plot(grid, pdf, color="tab:blue", lw=1.8, label=f"hist GF (n={len(memb)})")
+        ax.axvline(at, color="k", lw=2.8, label="amip true")
+        ax.axvline(ag, color="tab:red", lw=2.4, ls="--", label="amip gf")
+        ax.set_title(f"{name} (n={len(memb)})"); ax.set_xlim(*xlim); ax.set_ylim(bottom=0)
+        ax.set_xlabel("λ [W m⁻² K⁻¹]"); ax.legend(fontsize=6.5)
+    for r in range(nrows):
+        axf[r * ncols].set_ylabel("density")
+    for ax in axf[len(models):]:
+        ax.axis("off")
+    fig.suptitle(title); fig.tight_layout()
+    FIGURES_DIR.mkdir(exist_ok=True)
+    fig.savefig(FIGURES_DIR / fname, dpi=110)
+
+
+lw_end = int(end_year[-1])
+lastwindow_panels("feedback_slope",
+                  f"Last-window λ = slope of N′ on T′  ({WINDOW_LENGTH}-yr window ending {lw_end})",
+                  f"feedbacks_lastwindow_slope_win{WINDOW_LENGTH}.png")
+lastwindow_panels("feedback_trend_ratio",
+                  f"Last-window λ = ratio of N′, T′ trends  ({WINDOW_LENGTH}-yr window ending {lw_end})",
+                  f"feedbacks_lastwindow_trendratio_win{WINDOW_LENGTH}.png")
