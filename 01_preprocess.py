@@ -118,6 +118,7 @@ sftlf.plot(ax=a1); a1.set_title("sftlf (% land)")
 
 # %%
 def sanity_check(da, var, label):
+    """Assert a written field is physically sane: contiguous years, no unexpected NaNs, plausible global mean."""
     years = da.year.values
     assert (years[1:] - years[:-1] == 1).all(), f"{label}: gap in years"
     gmean = float(da.weighted(np.cos(np.deg2rad(da.lat))).mean())

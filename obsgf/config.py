@@ -5,8 +5,8 @@ from pathlib import Path
 # --- paths -----------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CATALOG_DIR = Path("/Users/cristi/cmip6/catalog")
-CATALOG_JSON = CATALOG_DIR / "cmip6_local.json"
 
+CATALOG_JSON = CATALOG_DIR / "cmip6_local.json"
 PREPROCESSED_DIR = PROJECT_ROOT / "pre-processed_data"
 DERIVED_DIR = PROJECT_ROOT / "derived"
 FIGURES_DIR = PROJECT_ROOT / "figures"
@@ -14,13 +14,8 @@ FIGURES_DIR = PROJECT_ROOT / "figures"
 # --- model roster ----------------------------------------------------------
 # The models analyzed everywhere. Each one has a full amip-piForcing predictor/target
 # set (tas, toa, ts) so a per-model GF can be built, AND a historical tos so that GF can
-# be applied — the two requirements to go through the whole pipeline. Preprocessing (01),
-# GF fitting (02), and the historical analysis (03) all iterate this one list.
-#
-# To add a model: download its amip-piForcing (tas/toa/ts) and historical tos into the
-# pool, add its name here, and rerun 01 -> 02 -> 03. (GISS-E2-1-G is deliberately absent:
-# its local amip-piForcing covers only 1950-1970, too short to build a GF.)
-#
+# be applied
+
 # Kept in sorted() order so the model dimension of the outputs is deterministic.
 MODELS = [
     "CESM2",
@@ -33,14 +28,14 @@ MODELS = [
     "TaiESM1",
 ]
 
-
 # --- shared analysis constants ---------------------------------------------
 # Only constants used by more than one place live here; single-notebook knobs (ridge
 # alphas, window length, ratio settings) sit in visible cells at the top of their
-# notebook, where they belong for exploratory work.
+# notebook. 
 #
 # Common analysis window: models differ at the edges (TaiESM1 starts 1850, CESM2 runs
 # to 2015); clip everything to this shared span so windows and holdouts align.
+
 ANALYSIS_YEARS = (1870, 2014)  # used by 02_greens and 03_feedbacks
 BASELINE_YEARS = (1870, 1919)  # anomaly reference climatology (first 50 yrs); both notebooks
 OCEAN_SFTLF_MAX = 50.0         # cell is "ocean" if land fraction < this (%); used by masks.py

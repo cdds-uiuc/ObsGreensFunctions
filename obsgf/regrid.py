@@ -21,6 +21,7 @@ from .masks import ocean_mask
 
 
 def _out_path(model, member):
+    """Cache path for one model/member's regridded historical tos."""
     return DERIVED_DIR / "regridded" / f"tos_{model}_historical_{member}.nc"
 
 
@@ -61,6 +62,7 @@ def regrid_model(model, rebuild=False):
 
 
 def main(argv=None):
+    """CLI: regrid historical tos for one --model (or all), reporting members and output grid."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model")
     p.add_argument("--force", action="store_true")

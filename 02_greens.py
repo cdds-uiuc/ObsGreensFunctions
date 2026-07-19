@@ -34,12 +34,12 @@ HOLDOUT_LENGTH = 20              # length (yr) of each held-out validation segme
 PREDICTOR_LAT_BOUND = 55         # keep SST predictors within ±this latitude (avoid sea ice)
 WALKTHROUGH_MODEL = "CanESM5"
 
-
 # %%
 # A small map helper (Robinson projection, coastlines, optional 98th-pct scaling), used
 # for the mask and GF maps below — the cartopy boilerplate kept out of the science cells.
 def map_plot(da, ax=None, title=None, vmin=None, vmax=None, cmap="RdBu_r",
              robust=False, cbar=True, cbar_label=None):
+    """Plot a lat/lon DataArray on a Robinson map with coastlines; robust=True scales to ±P98."""
     if ax is None:
         ax = plt.axes(projection=ccrs.Robinson(central_longitude=180))
     if robust and vmin is None:
@@ -54,7 +54,7 @@ def map_plot(da, ax=None, title=None, vmin=None, vmax=None, cmap="RdBu_r",
     return p
 
 # %% [markdown]
-# ## The two global-mean targets
+# ## Global-means
 #
 # Load tas and toa, take anomalies vs 1870–1919, and form the two things the GFs predict:
 # global-mean net TOA **N** and global-\mean temperature **T** (both area-weighted over the
@@ -67,6 +67,7 @@ def anomaly(da):
 
 
 def load_amip(var, model):
+    """Load one amip-piForcing variable for a model, clipped to the common analysis window."""
     ds = xr.open_dataset(find_preprocessed(var, "amip-piForcing", model))
     return ds[var].sel(year=slice(*ANALYSIS_YEARS))
 
@@ -97,15 +98,18 @@ def predictor_mask(model, lat_bound=PREDICTOR_LAT_BOUND):
 
 
 def ocean_points(mask):
+    """The (lat, lon) index of a mask's True cells — a fixed column order for the design matrix."""
     m = mask.stack(pt=("lat", "lon"))
     return m.pt[m.values]           # the ocean-point index (fixes column order)
 
 
 def ocean_sst_matrix(anom, pts):
+    """Stack an anomaly field into a (year, ocean-point) matrix on `pts`; missing SST → 0."""
     return anom.stack(pt=("lat", "lon")).sel(pt=pts).fillna(0.0)   # (year, ocean-point)
 
 
 def area_weights(X):
+    """√cos(lat) column weights so the ridge penalty is area-fair over the sphere."""
     # cos clipped at 0: some regridded grids carry a latitude a hair beyond ±90
     return np.sqrt(np.clip(np.cos(np.deg2rad(X.lat.values)), 0, None))
 
@@ -143,6 +147,7 @@ def dual_ridge(X, y, alpha):
 
 # %%
 def cv_mse(X, y, alpha, folds):
+    """Mean blocked-CV MSE for one α: train off each fold, score on the held-out fold."""
     errs = []
     for f in folds:
         tr = np.setdiff1d(np.arange(len(y)), f)
@@ -152,6 +157,7 @@ def cv_mse(X, y, alpha, folds):
 
 
 def select_alpha(X, y, alphas=ALPHAS, k=N_CV_BLOCKS):
+    """Pick the ridge α with the lowest blocked-CV MSE (folds contiguous in time)."""
     folds = np.array_split(np.arange(len(y)), k)
     scores = [cv_mse(X, y, a, folds) for a in alphas]
     return float(alphas[int(np.argmin(scores))])
@@ -176,6 +182,7 @@ plt.xlabel("ridge α"); plt.ylabel("blocked-CV MSE of N"); plt.title(f"α for N 
 
 # %%
 def holdout_segments(n_years, length=HOLDOUT_LENGTH):
+    """Index arrays for the early / middle / late held-out validation segments of the record."""
     mid = n_years // 2 - length // 2
     return {"early": np.arange(0, length),
             "middle": np.arange(mid, mid + length),
@@ -183,6 +190,7 @@ def holdout_segments(n_years, length=HOLDOUT_LENGTH):
 
 
 def reconstruction_skill(y_true, y_pred):
+    """r² and RMSE of a reconstruction against the truth series."""
     ss_res = np.sum((y_true - y_pred) ** 2)
     ss_tot = np.sum((y_true - y_true.mean()) ** 2)
     return {"r2": float(1 - ss_res / ss_tot),

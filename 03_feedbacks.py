@@ -37,6 +37,7 @@ WALKTHROUGH_MODEL = "CanESM5"
 # A small plotting helper used by the figures below: a member ensemble as a shaded
 # 5-95% band + mean line (a single member falls back to a plain line).
 def ensemble_band(ax, x, arr, color, label, pct=(5, 95)):
+    """Draw a member ensemble as a shaded pct band + mean line; a single member is a plain line."""
     arr = np.atleast_2d(arr)
     if arr.shape[0] == 1:
         ax.plot(x, arr[0], color=color, lw=1.5, label=label)
@@ -55,6 +56,7 @@ def ensemble_band(ax, x, arr, color, label, pct=(5, 95)):
 
 # %%
 def _ols_slope(x, y):
+    """OLS slope of y on x (NaN if x has no variance)."""
     xc = x - x.mean()
     denom = np.sum(xc * xc)
     return np.sum(xc * (y - y.mean())) / denom if denom > 0 else np.nan
@@ -71,10 +73,12 @@ def _smooth(a, w):
 
 
 def window_centres(years, win=WINDOW_LENGTH):
+    """Centre year of each length-`win` sliding window — the x-axis for the window feedback."""
     return np.array([float(np.mean(years[i:i + win])) for i in range(len(years) - win + 1)])
 
 
 def window_slopes(T, N, years, win=WINDOW_LENGTH):
+    """Feedback λ in each sliding window: OLS slope of N' on T' over `win` years."""
     return np.array([_ols_slope(T[i:i + win], N[i:i + win]) for i in range(len(years) - win + 1)])
 
 
@@ -89,6 +93,7 @@ def cumulative_ratio(T, N, years, start=RATIO_START_YEAR, smooth=RATIO_SMOOTH, t
 
 # %%
 def anomaly(da):
+    """Anomaly relative to the 1870–1919 baseline climatology."""
     return da - da.sel(year=slice(*BASELINE_YEARS)).mean("year")
 
 
@@ -179,6 +184,7 @@ Run = namedtuple("Run", ["model", "member", "feedback"])
 
 
 def feedback_of(years, T, N):
+    """Both feedback definitions (window slopes + cumulative ratio) for one (T', N') series."""
     return Feedback(window_slopes(T, N, years), cumulative_ratio(T, N, years))
 
 
@@ -229,10 +235,12 @@ print(f"saved feedbacks.nc and feedbacks_hist_ensemble.nc ({len(ensemble)} runs)
 
 # %%
 def hist_of(var, m):
+    """The historical-ensemble rows of `var` belonging to model `m`."""
     return ens[var].values[ens.model.values.astype(str) == m]
 
 
 def multipanel(var, x, xlabel, title, fname, ylim=None):
+    """Grid of per-model panels + a pooled panel: amip true/gf lines over the historical band; saves `fname`."""
     # one panel per model plus a pooled panel; grid sized to fit however many models
     panels = list(models) + ["all models pooled"]
     ncols = 4
