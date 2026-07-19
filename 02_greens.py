@@ -21,6 +21,9 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.metrics import r2_score, root_mean_squared_error
 
 from obsgf import config
 from obsgf.config import (ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR,
@@ -125,50 +128,39 @@ map_plot(mask.astype(float), title=f"{WALKTHROUGH_MODEL} predictor mask (ocean, 
                   cmap="Blues", cbar=False);
 
 # %% [markdown]
-# ## Ridge regression (dual form)
+# ## Ridge regression
 #
-# We minimize ‖y − Xβ‖² + α‖β‖². With far more points than years, the **dual form**
-# `β = Xᵀ(XXᵀ + αI)⁻¹y` is exact and cheap (it inverts a 145×145 matrix). No intercept:
-# zero SST anomaly must give zero response. α is the ridge penalty — larger = smoother.
+# The GF is a linear map from the ~5000-point SST pattern to a scalar response. With far
+# more points than years (145), plain least squares would overfit wildly, so we use **ridge
+# regression** — least squares with an α‖β‖² penalty that shrinks the coefficients. We treat
+# the estimator itself as trusted machinery: scikit-learn's `KernelRidge` with a linear
+# kernel, which is ridge regression in the form that stays cheap when the predictors vastly
+# outnumber the samples. Two modeling choices stay in view: it carries **no intercept** (zero
+# SST anomaly must give zero response), and α is chosen by blocked cross-validation (next cell).
 
 # %%
-def dual_ridge(X, y, alpha):
-    """β minimizing ‖y − Xβ‖² + α‖β‖², no intercept (dual form)."""
-    K = X @ X.T
-    a = np.linalg.solve(K + alpha * np.eye(len(y)), y)
-    return X.T @ a
+def fit_ridge(Xw, y):
+    """CV-select the ridge penalty (blocked in time) and refit on all years; returns the fitted search."""
+    search = GridSearchCV(KernelRidge(kernel="linear"),
+                          {"alpha": ALPHAS}, cv=KFold(N_CV_BLOCKS, shuffle=False),
+                          scoring="neg_mean_squared_error")
+    return search.fit(Xw, y)
 
 # %% [markdown]
 # ## Choosing α by blocked cross-validation
 #
-# We hold out contiguous blocks of years (blocked, because SST is autocorrelated — random
-# folds would leak), and pick the α with the lowest cross-validated error. The curve below
+# `KFold(shuffle=False)` holds out *contiguous* blocks of years — blocked because SST is
+# autocorrelated, so shuffled folds would leak information from train into test. The α with
+# the lowest cross-validated MSE wins. The curve below (read off the search's `cv_results_`)
 # shows the trade-off; the star marks the choice for N.
 
 # %%
-def cv_mse(X, y, alpha, folds):
-    """Mean blocked-CV MSE for one α: train off each fold, score on the held-out fold."""
-    errs = []
-    for f in folds:
-        tr = np.setdiff1d(np.arange(len(y)), f)
-        beta = dual_ridge(X[tr], y[tr], alpha)
-        errs.append(np.mean((y[f] - X[f] @ beta) ** 2))
-    return np.mean(errs)
-
-
-def select_alpha(X, y, alphas=ALPHAS, k=N_CV_BLOCKS):
-    """Pick the ridge α with the lowest blocked-CV MSE (folds contiguous in time)."""
-    folds = np.array_split(np.arange(len(y)), k)
-    scores = [cv_mse(X, y, a, folds) for a in alphas]
-    return float(alphas[int(np.argmin(scores))])
-
-
-folds = np.array_split(np.arange(len(N)), N_CV_BLOCKS)
-cv_curve = [cv_mse(Xw, N, a, folds) for a in ALPHAS]
-alpha_N = ALPHAS[int(np.argmin(cv_curve))]
+search_N = fit_ridge(Xw, N)
+alpha_N = search_N.best_params_["alpha"]
+cv_mse_curve = -search_N.cv_results_["mean_test_score"]     # stored as neg-MSE → flip sign
 plt.figure(figsize=(6, 3.2))
-plt.loglog(ALPHAS, cv_curve, "o-")
-plt.loglog(alpha_N, min(cv_curve), "r*", ms=15)
+plt.loglog(ALPHAS, cv_mse_curve, "o-")
+plt.loglog(alpha_N, cv_mse_curve.min(), "r*", ms=15)
 plt.xlabel("ridge α"); plt.ylabel("blocked-CV MSE of N"); plt.title(f"α for N = {alpha_N:.0f}");
 
 # %% [markdown]
@@ -189,22 +181,12 @@ def holdout_segments(n_years, length=HOLDOUT_LENGTH):
             "late": np.arange(n_years - length, n_years)}
 
 
-def reconstruction_skill(y_true, y_pred):
-    """r² and RMSE of a reconstruction against the truth series."""
-    ss_res = np.sum((y_true - y_pred) ** 2)
-    ss_tot = np.sum((y_true - y_true.mean()) ** 2)
-    return {"r2": float(1 - ss_res / ss_tot),
-            "rmse": float(np.sqrt(np.mean((y_true - y_pred) ** 2)))}
-
-
 # validate N reconstruction on each held-out segment, and plot it
 fig, axes = plt.subplots(1, 3, figsize=(15, 3), sharey=True)
 for ax, (name, test) in zip(axes, holdout_segments(len(N)).items()):
     train = np.setdiff1d(np.arange(len(N)), test)
-    alpha = select_alpha(Xw[train], N[train])
-    beta = dual_ridge(Xw[train], N[train], alpha)
-    N_hat = Xw @ beta
-    r2 = reconstruction_skill(N[test], N_hat[test])["r2"]
+    N_hat = fit_ridge(Xw[train], N[train]).predict(Xw)      # α re-selected within the train years
+    r2 = r2_score(N[test], N_hat[test])
     ax.plot(year, N, "k", label="N true")
     ax.plot(year, N_hat, "tab:red", lw=1, label="N reconstructed")
     ax.axvspan(year[test][0], year[test][-1], color="orange", alpha=0.15)
@@ -227,7 +209,7 @@ def gf_map(g, pts, mask):
     return full.unstack("pt").rename(None)
 
 
-beta_N = dual_ridge(Xw, N, select_alpha(Xw, N))
+beta_N = Xw.T @ fit_ridge(Xw, N).best_estimator_.dual_coef_   # primal coefficients (linear kernel)
 G_toa = gf_map(w * beta_N, pts, mask)          # physical units (applies to unscaled SST)
 fig = plt.figure(figsize=(8, 4))
 map_plot(G_toa, robust=True, cbar_label="∂N/∂T(x)  [W m⁻² K⁻¹ per cell]",
@@ -258,19 +240,21 @@ def fit_gf(model):
     for target, y in targets.items():                          # held-out validation
         for name, test in holdout_segments(len(y)).items():
             train = np.setdiff1d(np.arange(len(y)), test)
-            alpha = select_alpha(Xwm[train], y[train])
-            beta = dual_ridge(Xwm[train], y[train], alpha)
+            search = fit_ridge(Xwm[train], y[train])
+            pred = search.predict(Xwm[test])
             skill.append({"model": model, "target": target, "segment": name,
-                          "alpha": alpha, **reconstruction_skill(y[test], Xwm[test] @ beta)})
+                          "alpha": search.best_params_["alpha"],
+                          "r2": r2_score(y[test], pred),
+                          "rmse": root_mean_squared_error(y[test], pred)})
 
     gf_maps, series = {}, {}                                    # production fit on full record
     for target, y in targets.items():
-        alpha = select_alpha(Xwm, y)
-        beta = dual_ridge(Xwm, y, alpha)
+        search = fit_ridge(Xwm, y)
+        beta = Xwm.T @ search.best_estimator_.dual_coef_       # primal coefficients (linear kernel)
         gf_maps[f"G_{target}"] = gf_map(wm * beta, p, m)
-        gf_maps[f"G_{target}"].attrs = {"alpha": alpha}
+        gf_maps[f"G_{target}"].attrs = {"alpha": search.best_params_["alpha"]}
         series[f"{target}_true"] = ("year", y)
-        series[f"{target}_hat"] = ("year", Xwm @ beta)
+        series[f"{target}_hat"] = ("year", search.predict(Xwm))
 
     (DERIVED_DIR / "gf").mkdir(parents=True, exist_ok=True)
     xr.Dataset(gf_maps, attrs={"model": model}).to_netcdf(DERIVED_DIR / "gf" / f"GF_{model}.nc")

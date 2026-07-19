@@ -20,6 +20,7 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 from collections import namedtuple
+from scipy.stats import linregress
 
 from obsgf import config
 from obsgf.config import ANALYSIS_YEARS, BASELINE_YEARS, DERIVED_DIR, FIGURES_DIR, MODELS, representative_member
@@ -55,13 +56,6 @@ def ensemble_band(ax, x, arr, color, label, pct=(5, 95)):
 # cell shows why that guard is needed.
 
 # %%
-def _ols_slope(x, y):
-    """OLS slope of y on x (NaN if x has no variance)."""
-    xc = x - x.mean()
-    denom = np.sum(xc * xc)
-    return np.sum(xc * (y - y.mean())) / denom if denom > 0 else np.nan
-
-
 def _smooth(a, w):
     """Centered running mean of width w, NaN-padded at the edges to keep length."""
     if w <= 1:
@@ -78,8 +72,8 @@ def window_centres(years, win=WINDOW_LENGTH):
 
 
 def window_slopes(T, N, years, win=WINDOW_LENGTH):
-    """Feedback λ in each sliding window: OLS slope of N' on T' over `win` years."""
-    return np.array([_ols_slope(T[i:i + win], N[i:i + win]) for i in range(len(years) - win + 1)])
+    """Feedback λ in each sliding window: slope of N' on T' over `win` years."""
+    return np.array([linregress(T[i:i + win], N[i:i + win]).slope for i in range(len(years) - win + 1)])
 
 
 def cumulative_ratio(T, N, years, start=RATIO_START_YEAR, smooth=RATIO_SMOOTH, tmin=RATIO_TMIN):
