@@ -4,8 +4,10 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
-# Jupytext pairs: the .py notebooks are the source of truth; .ipynb are regenerable
-*.ipynb
+# Jupytext pairs: the .ipynb notebooks are the source of truth; .py are regenerable
+01_preprocess.py
+02_greens.py
+03_feedbacks.py
 
 # --- large, regenerable data (NOT in git) ---
 # stage-1 outputs and all derived products; rebuild by running the notebooks
