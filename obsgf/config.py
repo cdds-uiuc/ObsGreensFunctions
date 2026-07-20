@@ -3,12 +3,22 @@
 from pathlib import Path
 
 # --- paths -----------------------------------------------------------------
+# find the project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CATALOG_DIR = Path("/Users/cristi/cmip6/catalog")
+
+# location of CMIP6 catalog
+CATALOG_DIR = Path("/data/keeling/a/cristi/a/cmip6/catalog")
+
+# where to save preprocessed and derived data
+# On Keeling (home directory is too small on keeling)
+PREPROCESSED_DIR = Path("/data/keeling/a/cristi/a/projects/ObsGreensFunctions/pre-processed_data")
+DERIVED_DIR = Path("/data/keeling/a/cristi/a/projects/ObsGreensFunctions/derived")
+# On laptop
+#PREPROCESSED_DIR = PROJECT_ROOT /"pre-processed_data"
+#DERIVED_DIR = PROJECT_ROOT / "derived"
+
 
 CATALOG_JSON = CATALOG_DIR / "cmip6_local.json"
-PREPROCESSED_DIR = PROJECT_ROOT / "pre-processed_data"
-DERIVED_DIR = PROJECT_ROOT / "derived"
 FIGURES_DIR = PROJECT_ROOT / "figures"
 
 # --- model roster ----------------------------------------------------------
